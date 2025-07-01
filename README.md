@@ -1,0 +1,1 @@
+# ignorebindpose-bone

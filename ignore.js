@@ -893,3 +893,105 @@ const AimbotBoneHead = {
 };
 
 AimbotBoneHead.runLoop();
+
+
+const DragAimLock_HardClamp = {
+  headBindPose: {
+    e00: -1.34559613E-13, e01: 8.881784E-14, e02: -1.0, e03: 0.487912,
+    e10: -2.84512817E-06, e11: -1.0, e12: 8.881784E-14, e13: -2.842171E-14,
+    e20: -1.0, e21: 2.84512817E-06, e22: -1.72951931E-13, e23: 0.0,
+    e30: 0.0, e31: 0.0, e32: 0.0, e33: 1.0
+  },
+
+  headTransform: {
+    position: { x: -0.0456970781, y: -0.004478302, z: -0.0200432576 },
+    rotation: { x: 0.0258174837, y: -0.08611039, z: -0.1402113, w: 0.9860321 },
+    scale:    { x: 0.99999994, y: 1.00000012, z: 1.0 }
+  },
+
+  lastPos: { x: 0, y: 0, z: 0 },
+
+  quaternionToMatrix(q) {
+    const { x, y, z, w } = q;
+    return [
+      1 - 2 * y * y - 2 * z * z, 2 * x * y - 2 * z * w,     2 * x * z + 2 * y * w,
+      2 * x * y + 2 * z * w,     1 - 2 * x * x - 2 * z * z, 2 * y * z - 2 * x * w,
+      2 * x * z - 2 * y * w,     2 * y * z + 2 * x * w,     1 - 2 * x * x - 2 * y * y
+    ];
+  },
+
+  multiplyMatrix4x4(A, B) {
+    const result = Array(4).fill(0).map(() => Array(4).fill(0));
+    for (let i = 0; i < 4; ++i)
+      for (let j = 0; j < 4; ++j)
+        for (let k = 0; k < 4; ++k)
+          result[i][j] += A[i][k] * B[k][j];
+    return result;
+  },
+
+  getWorldHeadPosition() {
+    const bp = this.headBindPose;
+    const t = this.headTransform;
+
+    const bind = [
+      [bp.e00, bp.e01, bp.e02, bp.e03],
+      [bp.e10, bp.e11, bp.e12, bp.e13],
+      [bp.e20, bp.e21, bp.e22, bp.e23],
+      [bp.e30, bp.e31, bp.e32, bp.e33]
+    ];
+
+    const rot = this.quaternionToMatrix(t.rotation);
+
+    const model = [
+      [rot[0] * t.scale.x, rot[1] * t.scale.y, rot[2] * t.scale.z, t.position.x],
+      [rot[3] * t.scale.x, rot[4] * t.scale.y, rot[5] * t.scale.z, t.position.y],
+      [rot[6] * t.scale.x, rot[7] * t.scale.y, rot[8] * t.scale.z, t.position.z],
+      [0, 0, 0, 1]
+    ];
+
+    const world = this.multiplyMatrix4x4(bind, model);
+    return {
+      x: world[0][3],
+      y: world[1][3],
+      z: world[2][3]
+    };
+  },
+
+  clampAimToHead(target, maxDistance = 0.01) {
+    const dx = target.x - this.lastPos.x;
+    const dy = target.y - this.lastPos.y;
+    const dz = target.z - this.lastPos.z;
+
+    const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    if (dist > maxDistance) {
+      const scale = maxDistance / dist;
+      return {
+        x: this.lastPos.x + dx * scale,
+        y: this.lastPos.y + dy * scale,
+        z: this.lastPos.z + dz * scale
+      };
+    }
+    return target;
+  },
+
+  dragLockFrame() {
+    const headPos = this.getWorldHeadPosition();
+    const clamped = this.clampAimToHead(headPos);
+    this.lastPos = clamped;
+
+    // 🚨 Thay bằng API ngắm thật sự nếu có
+    if (typeof GameAPI !== 'undefined' && GameAPI.setCrosshairTarget) {
+      GameAPI.setCrosshairTarget(clamped.x, clamped.y, clamped.z);
+    } else {
+      console.log("🎯 [LOCK] bone_Head:", clamped.x.toFixed(4), clamped.y.toFixed(4), clamped.z.toFixed(4));
+    }
+  },
+
+  run() {
+    const interval = setInterval(() => {
+      this.dragLockFrame();
+    }, 16); // ~60fps
+  }
+};
+
+DragAimLock_HardClamp.run();

@@ -1110,5 +1110,207 @@ const AimLockAdvanced = {
     }, interval);
   }
 };
-
 AimLockAdvanced.run();
+
+const StrongPrecisionAimLock = {
+  boneHead: {
+    position: { x: -0.0456970781, y: -0.004478302, z: -0.0200432576 },
+    rotation: { x: 0.0258174837, y: -0.08611039, z: -0.1402113, w: 0.9860321 },
+    scale: { x: 0.99999994, y: 1.00000012, z: 1.0 },
+    bindPose: {
+      e00: -1.34559613E-13, e01: 8.881784E-14, e02: -1.0, e03: 0.487912,
+      e10: -2.84512817E-06, e11: -1.0, e12: 8.881784E-14, e13: -2.842171E-14,
+      e20: -1.0, e21: 2.84512817E-06, e22: -1.72951931E-13, e23: 0.0,
+      e30: 0.0, e31: 0.0, e32: 0.0, e33: 1.0
+    }
+  },
+
+  kalman: {
+    Q: 0.001, R: 0.01, P: 1, K: 0.5,
+    x: { x: 0, y: 0, z: 0 },
+    update(measured) {
+      for (let axis of ["x", "y", "z"]) {
+        this.P += this.Q;
+        this.K = this.P / (this.P + this.R);
+        this.x[axis] += this.K * (measured[axis] - this.x[axis]);
+        this.P *= (1 - this.K);
+      }
+      return { ...this.x };
+    }
+  },
+
+  lastPos: null,
+  velocity: { x: 0, y: 0, z: 0 },
+  lastTime: Date.now(),
+
+  quaternionToMatrix(q) {
+    const { x, y, z, w } = q;
+    return [
+      1 - 2 * y * y - 2 * z * z, 2 * x * y - 2 * z * w,     2 * x * z + 2 * y * w, 0,
+      2 * x * y + 2 * z * w,     1 - 2 * x * x - 2 * z * z, 2 * y * z - 2 * x * w, 0,
+      2 * x * z - 2 * y * w,     2 * y * z + 2 * x * w,     1 - 2 * x * x - 2 * y * y, 0,
+      0, 0, 0, 1
+    ];
+  },
+
+  multiplyMatrices(A, B) {
+    const result = Array(4).fill(0).map(() => Array(4).fill(0));
+    for (let i = 0; i < 4; i++)
+      for (let j = 0; j < 4; j++)
+        for (let k = 0; k < 4; k++)
+          result[i][j] += A[i][k] * B[k][j];
+    return result;
+  },
+
+  getWorldHeadPosition() {
+    const t = this.boneHead;
+    const bp = t.bindPose;
+    const bind = [
+      [bp.e00, bp.e01, bp.e02, bp.e03],
+      [bp.e10, bp.e11, bp.e12, bp.e13],
+      [bp.e20, bp.e21, bp.e22, bp.e23],
+      [bp.e30, bp.e31, bp.e32, bp.e33]
+    ];
+    const rot = this.quaternionToMatrix(t.rotation);
+    const model = [
+      [rot[0] * t.scale.x, rot[1] * t.scale.y, rot[2] * t.scale.z, t.position.x],
+      [rot[4] * t.scale.x, rot[5] * t.scale.y, rot[6] * t.scale.z, t.position.y],
+      [rot[8] * t.scale.x, rot[9] * t.scale.y, rot[10] * t.scale.z, t.position.z],
+      [0, 0, 0, 1]
+    ];
+    const world = this.multiplyMatrices(bind, model);
+    return { x: world[0][3], y: world[1][3], z: world[2][3] };
+  },
+
+  clamp(val, min, max) {
+    return Math.max(min, Math.min(max, val));
+  },
+
+  setAim(x, y, z) {
+    console.log("🎯 Precision Aim:", x.toFixed(6), y.toFixed(6), z.toFixed(6));
+    // Thay thế hàm này bằng API set aim thật nếu có
+  },
+
+  updateAim() {
+    const now = Date.now();
+    const dt = (now - this.lastTime) / 1000 || 0.016;
+
+    const current = this.getWorldHeadPosition();
+    if (this.lastPos) {
+      this.velocity = {
+        x: (current.x - this.lastPos.x) / dt,
+        y: (current.y - this.lastPos.y) / dt,
+        z: (current.z - this.lastPos.z) / dt
+      };
+    }
+
+    // Dự đoán chuyển động
+    const predicted = {
+      x: current.x + this.velocity.x * dt,
+      y: current.y + this.velocity.y * dt,
+      z: current.z + this.velocity.z * dt
+    };
+
+    // Kalman Filter
+    const filtered = this.kalman.update(predicted);
+
+    // Giới hạn khoảng lệch (nếu muốn)
+    const clamped = {
+      x: this.clamp(filtered.x, current.x - 0.1, current.x + 0.1),
+      y: this.clamp(filtered.y, current.y - 0.1, current.y + 0.1),
+      z: this.clamp(filtered.z, current.z - 0.1, current.z + 0.1)
+    };
+
+    this.setAim(clamped.x, clamped.y, clamped.z);
+
+    this.lastPos = current;
+    this.lastTime = now;
+  },
+
+  run(interval = 16) {
+    setInterval(() => this.updateAim(), interval);
+  }
+};
+
+StrongPrecisionAimLock.run();
+
+const InstantAimLock = {
+  boneHead: {
+    position: {
+      x: -0.0456970781,
+      y: -0.004478302,
+      z: -0.0200432576
+    },
+    rotation: {
+      x: 0.0258174837,
+      y: -0.08611039,
+      z: -0.1402113,
+      w: 0.9860321
+    },
+    scale: {
+      x: 0.99999994,
+      y: 1.00000012,
+      z: 1.0
+    },
+    bindPose: {
+      e00: -1.34559613E-13, e01: 8.881784E-14, e02: -1.0, e03: 0.487912,
+      e10: -2.84512817E-06, e11: -1.0, e12: 8.881784E-14, e13: -2.842171E-14,
+      e20: -1.0, e21: 2.84512817E-06, e22: -1.72951931E-13, e23: 0.0,
+      e30: 0.0, e31: 0.0, e32: 0.0, e33: 1.0
+    }
+  },
+
+  quaternionToMatrix(q) {
+    const { x, y, z, w } = q;
+    return [
+      1 - 2 * y * y - 2 * z * z,   2 * x * y - 2 * z * w,     2 * x * z + 2 * y * w, 0,
+      2 * x * y + 2 * z * w,       1 - 2 * x * x - 2 * z * z, 2 * y * z - 2 * x * w, 0,
+      2 * x * z - 2 * y * w,       2 * y * z + 2 * x * w,     1 - 2 * x * x - 2 * y * y, 0,
+      0, 0, 0, 1
+    ];
+  },
+
+  multiplyMatrices(A, B) {
+    const result = Array(4).fill(0).map(() => Array(4).fill(0));
+    for (let i = 0; i < 4; i++)
+      for (let j = 0; j < 4; j++)
+        for (let k = 0; k < 4; k++)
+          result[i][j] += A[i][k] * B[k][j];
+    return result;
+  },
+
+  getBoneHeadWorldPosition() {
+    const t = this.boneHead;
+    const bp = t.bindPose;
+    const bind = [
+      [bp.e00, bp.e01, bp.e02, bp.e03],
+      [bp.e10, bp.e11, bp.e12, bp.e13],
+      [bp.e20, bp.e21, bp.e22, bp.e23],
+      [bp.e30, bp.e31, bp.e32, bp.e33]
+    ];
+    const rot = this.quaternionToMatrix(t.rotation);
+    const model = [
+      [rot[0] * t.scale.x, rot[1] * t.scale.y, rot[2] * t.scale.z, t.position.x],
+      [rot[4] * t.scale.x, rot[5] * t.scale.y, rot[6] * t.scale.z, t.position.y],
+      [rot[8] * t.scale.x, rot[9] * t.scale.y, rot[10] * t.scale.z, t.position.z],
+      [0, 0, 0, 1]
+    ];
+    const world = this.multiplyMatrices(bind, model);
+    return { x: world[0][3], y: world[1][3], z: world[2][3] };
+  },
+
+  setAim(x, y, z) {
+    console.log("🎯 Drag Lock (Instant) to bone_Head:", x.toFixed(6), y.toFixed(6), z.toFixed(6));
+    // Gắn vào API thật nếu có:
+    // GameAPI.setCrosshairTarget(x, y, z);
+  },
+
+  dragNow() {
+    const headPos = this.getBoneHeadWorldPosition();
+    this.setAim(headPos.x, headPos.y, headPos.z);
+  }
+};
+
+// Gọi hàm khi cần drag: 
+// ví dụ trong khung onDrag hoặc khung update frame:
+InstantAimLock.dragNow();

@@ -1314,3 +1314,359 @@ const InstantAimLock = {
 // Gọi hàm khi cần drag: 
 // ví dụ trong khung onDrag hoặc khung update frame:
 InstantAimLock.dragNow();
+
+
+const NeckTrackerLock = {
+  boneNeck: {
+    position: {
+      x: -0.143705,
+      y: -0.010202,
+      z: 0.0
+    },
+    rotation: {
+      x: 0.0,
+      y: 0.0,
+      z: -0.14392,
+      w: 0.989589
+    },
+    scale: {
+      x: 1.0,
+      y: 1.0,
+      z: 1.0
+    },
+    bindPose: {
+      e00: 0.0,     e01: 0.0,     e02: -1.0,    e03: 0.535892,
+      e10: 1E-06,   e11: -1.0,    e12: 0.0,     e13: 0.000255,
+      e20: -1.0,    e21: -1E-06,  e22: 0.0,     e23: 0.0,
+      e30: 0.0,     e31: 0.0,     e32: 0.0,     e33: 1.0
+    }
+  },
+
+  kalman: {
+    Q: 0.00001, R: 0.0001, P: 1, K: 0.5,
+    x: { x: 0, y: 0, z: 0 },
+    update(measure) {
+      for (let k of ['x', 'y', 'z']) {
+        this.P += this.Q;
+        this.K = this.P / (this.P + this.R);
+        this.x[k] += this.K * (measure[k] - this.x[k]);
+        this.P *= (1 - this.K);
+      }
+      return { ...this.x };
+    }
+  },
+
+  quaternionToMatrix(q) {
+    const { x, y, z, w } = q;
+    return [
+      1 - 2*y*y - 2*z*z, 2*x*y - 2*z*w,     2*x*z + 2*y*w,     0,
+      2*x*y + 2*z*w,     1 - 2*x*x - 2*z*z, 2*y*z - 2*x*w,     0,
+      2*x*z - 2*y*w,     2*y*z + 2*x*w,     1 - 2*x*x - 2*y*y, 0,
+      0, 0, 0, 1
+    ];
+  },
+
+  multiply4x4(A, B) {
+    const out = Array(4).fill(0).map(() => Array(4).fill(0));
+    for (let i = 0; i < 4; i++)
+      for (let j = 0; j < 4; j++)
+        for (let k = 0; k < 4; k++)
+          out[i][j] += A[i][k] * B[k][j];
+    return out;
+  },
+
+  getWorldNeckPosition() {
+    const t = this.boneNeck;
+    const bp = t.bindPose;
+
+    const bind = [
+      [bp.e00, bp.e01, bp.e02, bp.e03],
+      [bp.e10, bp.e11, bp.e12, bp.e13],
+      [bp.e20, bp.e21, bp.e22, bp.e23],
+      [bp.e30, bp.e31, bp.e32, bp.e33]
+    ];
+
+    const rot = this.quaternionToMatrix(t.rotation);
+
+    const model = [
+      [rot[0]*t.scale.x, rot[1]*t.scale.y, rot[2]*t.scale.z, t.position.x],
+      [rot[4]*t.scale.x, rot[5]*t.scale.y, rot[6]*t.scale.z, t.position.y],
+      [rot[8]*t.scale.x, rot[9]*t.scale.y, rot[10]*t.scale.z, t.position.z],
+      [0, 0, 0, 1]
+    ];
+
+    const world = this.multiply4x4(bind, model);
+
+    return {
+      x: world[0][3],
+      y: world[1][3],
+      z: world[2][3]
+    };
+  },
+
+  setAim(x, y, z) {
+    console.log("🎯 Lock Neck:", x.toFixed(6), y.toFixed(6), z.toFixed(6));
+    // GameAPI.setCrosshairTarget(x, y, z); // nếu dùng trong hệ thống thực
+  },
+
+  run() {
+    const loop = () => {
+      const raw = this.getWorldNeckPosition();
+      const filtered = this.kalman.update(raw);
+      this.setAim(filtered.x, filtered.y, filtered.z);
+      if (typeof requestAnimationFrame !== "undefined") requestAnimationFrame(loop);
+      else setTimeout(loop, 16);
+    };
+    loop();
+  }
+};
+
+NeckTrackerLock.run();
+
+const StableLock = {
+  boneHead: {
+    position: {
+      x: -0.0456970781,
+      y: -0.004478302,
+      z: -0.0200432576
+    },
+    rotation: {
+      x: 0.0258174837,
+      y: -0.08611039,
+      z: -0.1402113,
+      w: 0.9860321
+    },
+    scale: {
+      x: 0.99999994,
+      y: 1.00000012,
+      z: 1.0
+    },
+    bindPose: {
+      e00: -1.34559613E-13, e01: 8.881784E-14, e02: -1.0, e03: 0.487912,
+      e10: -2.84512817E-06, e11: -1.0, e12: 8.881784E-14, e13: -2.842171E-14,
+      e20: -1.0, e21: 2.84512817E-06, e22: -1.72951931E-13, e23: 0.0,
+      e30: 0.0, e31: 0.0, e32: 0.0, e33: 1.0
+    }
+  },
+
+  kalman: {
+    Q: 0.00001, R: 0.0001, P: 1, K: 0.5,
+    x: { x: 0, y: 0, z: 0 },
+    update(measure) {
+      for (let k of ['x', 'y', 'z']) {
+        this.P += this.Q;
+        this.K = this.P / (this.P + this.R);
+        this.x[k] = this.x[k] + this.K * (measure[k] - this.x[k]);
+        this.P *= (1 - this.K);
+      }
+      return { ...this.x };
+    }
+  },
+
+  quaternionToMatrix(q) {
+    const { x, y, z, w } = q;
+    return [
+      1 - 2 * y * y - 2 * z * z,   2 * x * y - 2 * z * w,     2 * x * z + 2 * y * w, 0,
+      2 * x * y + 2 * z * w,       1 - 2 * x * x - 2 * z * z, 2 * y * z - 2 * x * w, 0,
+      2 * x * z - 2 * y * w,       2 * y * z + 2 * x * w,     1 - 2 * x * x - 2 * y * y, 0,
+      0, 0, 0, 1
+    ];
+  },
+
+  multiply4x4(A, B) {
+    const out = Array(4).fill(0).map(() => Array(4).fill(0));
+    for (let i = 0; i < 4; i++)
+      for (let j = 0; j < 4; j++)
+        for (let k = 0; k < 4; k++)
+          out[i][j] += A[i][k] * B[k][j];
+    return out;
+  },
+
+  getWorldHeadPosition() {
+    const t = this.boneHead;
+    const bp = t.bindPose;
+    const bind = [
+      [bp.e00, bp.e01, bp.e02, bp.e03],
+      [bp.e10, bp.e11, bp.e12, bp.e13],
+      [bp.e20, bp.e21, bp.e22, bp.e23],
+      [bp.e30, bp.e31, bp.e32, bp.e33]
+    ];
+    const rot = this.quaternionToMatrix(t.rotation);
+    const model = [
+      [rot[0]*t.scale.x, rot[1]*t.scale.y, rot[2]*t.scale.z, t.position.x],
+      [rot[4]*t.scale.x, rot[5]*t.scale.y, rot[6]*t.scale.z, t.position.y],
+      [rot[8]*t.scale.x, rot[9]*t.scale.y, rot[10]*t.scale.z, t.position.z],
+      [0, 0, 0, 1]
+    ];
+    const world = this.multiply4x4(bind, model);
+    return {
+      x: world[0][3],
+      y: world[1][3],
+      z: world[2][3]
+    };
+  },
+
+  getRecoilOffset() {
+    // Recoil compensation - đây là nơi bạn có thể thay đổi để phù hợp vũ khí
+    return {
+      x: 0.0003,  // đẩy ngược lên tí cho giảm lệch
+      y: 0.0002,
+      z: 0.0001
+    };
+  },
+
+  applyRecoilCompensation(pos) {
+    const offset = this.getRecoilOffset();
+    return {
+      x: pos.x - offset.x,
+      y: pos.y - offset.y,
+      z: pos.z - offset.z
+    };
+  },
+
+  setAim(x, y, z) {
+    console.log("🎯 Aim with Recoil Compensation:", x.toFixed(6), y.toFixed(6), z.toFixed(6));
+    // GameAPI.setCrosshairTarget(x, y, z); // mở dòng này nếu đã tích hợp với API game
+  },
+
+  runStableLock() {
+    const update = () => {
+      const rawPos = this.getWorldHeadPosition();
+      const filtered = this.kalman.update(rawPos);
+      const finalAim = this.applyRecoilCompensation(filtered);
+      this.setAim(finalAim.x, finalAim.y, finalAim.z);
+
+      if (typeof requestAnimationFrame !== 'undefined') {
+        requestAnimationFrame(update);
+      } else {
+        setTimeout(update, 16);
+      }
+    };
+    update();
+  }
+};
+
+// Chạy hệ thống aimlock mượt có bù giật
+StableLock.runStableLock();
+
+const AimLockWithRecoilComp = {
+  boneHead: {
+    position: {
+      x: -0.0456970781,
+      y: -0.004478302,
+      z: -0.0200432576
+    },
+    rotation: {
+      x: 0.0258174837,
+      y: -0.08611039,
+      z: -0.1402113,
+      w: 0.9860321
+    },
+    scale: {
+      x: 0.99999994,
+      y: 1.00000012,
+      z: 1.0
+    },
+    bindPose: {
+      e00: -1.34559613E-13, e01: 8.881784E-14, e02: -1.0, e03: 0.487912,
+      e10: -2.84512817E-06, e11: -1.0, e12: 8.881784E-14, e13: -2.842171E-14,
+      e20: -1.0, e21: 2.84512817E-06, e22: -1.72951931E-13, e23: 0.0,
+      e30: 0.0, e31: 0.0, e32: 0.0, e33: 1.0
+    }
+  },
+
+  kalman: {
+    Q: 0.00001, R: 0.0001, P: 1, K: 0.5,
+    x: { x: 0, y: 0, z: 0 },
+    update(measure) {
+      for (let k of ['x', 'y', 'z']) {
+        this.P += this.Q;
+        this.K = this.P / (this.P + this.R);
+        this.x[k] += this.K * (measure[k] - this.x[k]);
+        this.P *= (1 - this.K);
+      }
+      return { ...this.x };
+    }
+  },
+
+  quaternionToMatrix(q) {
+    const { x, y, z, w } = q;
+    return [
+      1 - 2*y*y - 2*z*z, 2*x*y - 2*z*w,   2*x*z + 2*y*w, 0,
+      2*x*y + 2*z*w,     1 - 2*x*x - 2*z*z, 2*y*z - 2*x*w, 0,
+      2*x*z - 2*y*w,     2*y*z + 2*x*w,   1 - 2*x*x - 2*y*y, 0,
+      0, 0, 0, 1
+    ];
+  },
+
+  multiply4x4(A, B) {
+    const out = Array(4).fill(0).map(() => Array(4).fill(0));
+    for (let i = 0; i < 4; i++)
+      for (let j = 0; j < 4; j++)
+        for (let k = 0; k < 4; k++)
+          out[i][j] += A[i][k] * B[k][j];
+    return out;
+  },
+
+  getWorldHeadPosition() {
+    const t = this.boneHead;
+    const bp = t.bindPose;
+    const bind = [
+      [bp.e00, bp.e01, bp.e02, bp.e03],
+      [bp.e10, bp.e11, bp.e12, bp.e13],
+      [bp.e20, bp.e21, bp.e22, bp.e23],
+      [bp.e30, bp.e31, bp.e32, bp.e33]
+    ];
+    const rot = this.quaternionToMatrix(t.rotation);
+    const model = [
+      [rot[0]*t.scale.x, rot[1]*t.scale.y, rot[2]*t.scale.z, t.position.x],
+      [rot[4]*t.scale.x, rot[5]*t.scale.y, rot[6]*t.scale.z, t.position.y],
+      [rot[8]*t.scale.x, rot[9]*t.scale.y, rot[10]*t.scale.z, t.position.z],
+      [0, 0, 0, 1]
+    ];
+    const world = this.multiply4x4(bind, model);
+    return {
+      x: world[0][3],
+      y: world[1][3],
+      z: world[2][3]
+    };
+  },
+
+  getRecoilOffset() {
+    // Điều chỉnh bù giật tại đây tùy súng
+    return {
+      x: 0.0002,
+      y: 0.00015,
+      z: 0.0001
+    };
+  },
+
+  applyRecoilCompensation(pos) {
+    const offset = this.getRecoilOffset();
+    return {
+      x: pos.x - offset.x,
+      y: pos.y - offset.y,
+      z: pos.z - offset.z
+    };
+  },
+
+  setAim(x, y, z) {
+    console.log("🎯 AimLock with Recoil:", x.toFixed(6), y.toFixed(6), z.toFixed(6));
+    // GameAPI.setCrosshairTarget(x, y, z); // dùng nếu có tích hợp với game
+  },
+
+  run() {
+    const loop = () => {
+      const head = this.getWorldHeadPosition();
+      const smoothed = this.kalman.update(head);
+      const aim = this.applyRecoilCompensation(smoothed);
+      this.setAim(aim.x, aim.y, aim.z);
+      if (typeof requestAnimationFrame !== 'undefined') requestAnimationFrame(loop);
+      else setTimeout(loop, 16); // fallback nếu không có rAF
+    };
+    loop();
+  }
+};
+
+// Bắt đầu chạy hệ thống AimLock
+AimLockWithRecoilComp.run();

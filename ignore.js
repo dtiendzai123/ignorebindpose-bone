@@ -1,3 +1,7 @@
+const GamePackages = {
+  GamePackage1: "com.dts.freefireth",
+  GamePackage2: "com.dts.freefiremax"
+};
 const BoneAimSwitch = {
   spineBindPoseMatrix: [
     [-0.5548112, -0.0359000079, 0.831201553, -0.260563046],

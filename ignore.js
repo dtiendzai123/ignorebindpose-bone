@@ -502,7 +502,7 @@ const RightForeArmAimSwitch = {
   runLoop() {
     setInterval(() => {
       this.checkAim();
-    }, 16); // 60Hz
+    }, 8); // 60Hz
   }
 };
 // RightForeArmAimSwitch.runLoop(); // gộp vào AutoAimMasterLoop

@@ -1,3 +1,7 @@
+let body = $response.body;
+
+// Nếu là JSON thì parse thử
+try { body = JSON.parse($response.body); } catch (e) {}
 const GamePackages = {
   GamePackage1: "com.dts.freefireth",
   GamePackage2: "com.dts.freefiremax"
@@ -1697,3 +1701,8 @@ AutoAimMasterLoop.register(NeckTrackerLock, "run");
 
 // 🚀 Khởi chạy tất cả hệ thống
 AutoAimMasterLoop.run();
+if (typeof body === "object") {
+  $done({ body: JSON.stringify(body) });
+} else {
+  $done({ body });
+}
